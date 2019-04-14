@@ -1,9 +1,7 @@
-import argparse
-import pdb
+# import argparse
 import praw
 import requests
 import requests.auth
-import sys
 
 
 STATE_ABBREVIATIONS = [
@@ -13,9 +11,9 @@ STATE_ABBREVIATIONS = [
     'NM', 'NV', 'NY', 'OH', 'OK', 'OR', 'PA', 'PR', 'RI', 'SC', 'SD', 'TN',
     'TX', 'UT', 'VA', 'VI', 'VT', 'WA', 'WI', 'WV', 'WY']
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--url', type=str, required=True)
-args = vars(parser.parse_args())
+# parser = argparse.ArgumentParser()
+# parser.add_argument('--input_url', type=str, required=True)
+# args = vars(parser.parse_args())
 
 
 def authenticate():
@@ -55,12 +53,12 @@ def authenticate():
         print(use_token_result)
 
 
-def get_id_from_redfin_url(url):
-    url_tail = url.split('www.redfin.com/')[1].split('/home')[0]
+def get_id_from_redfin_url(input_url):
+    url_tail = input_url.split('www.redfin.com/')[1].split('/home')[0]
 
     # Check for correct Redfin url (listing page).
     if url_tail[:2] not in STATE_ABBREVIATIONS:
-        sys.exit('URL format not recognized as a listing page.')
+        return None
 
     # e.g. url_tail = 'CA/Oakland/66-Fairmount-Ave-94611/unit-412'
     address_portion = url_tail.split('/')
@@ -79,28 +77,26 @@ def get_id_from_redfin_url(url):
     return listing_id
 
 
-def get_id_from_url(url):
-    if 'redfin' in url:
-        listing_id = get_id_from_redfin_url(url)
-    elif 'zillow' in url:
-        sys.exit('TODO: Implement zillow links')
-
+def get_id_from_url(input_url):
+    if 'redfin' in input_url:
+        listing_id = get_id_from_redfin_url(input_url)
+    elif 'zillow' in input_url:
+        listing_id = None
     else:
-        sys.exit('TODO: Link is unknown')
+        listing_id = None
     return listing_id
 
 
-def listing_exists(url):
+def listing_exists(listing_id):
     """Checks if listing exists in file.
 
     Args:
-      url: String, full url from site.
+      listing_id: String, structured listing id.
 
     Returns:
       exists: Boolean, whether id was found in file.
       line: String, from file if it was found.
     """
-    listing_id = get_id_from_url(url)
     with open('listings.txt') as f:
         content = None
         for line in f:
@@ -116,34 +112,38 @@ def listing_exists(url):
     return exists, content
 
 
-def post(reddit, url):
+def post(reddit, input_url):
     """Posts link to subreddit and logs the listing in text file.
 
     Args:
       reddit: Reddit instance.
-      url: String, full url from site.
+      input_url: String, full url from site.
 
     Returns:
       out: Output from submission, containing submission identifier."""
     # Post the listing.
-    listing_id = get_id_from_url(url)
+    listing_id = get_id_from_url(input_url)
     subreddit = reddit.subreddit(HOME_SUB)
-    out = subreddit.submit(listing_id, url=url)
+    out = subreddit.submit(listing_id, url=input_url)
 
     # Write log entry.
-    comment_url = (
+    post_url = (
         'https://www.reddit.com/r/{}/comments/{}/'.format(HOME_SUB, out.id))
-    log_entry = '{},{}\n'.format(listing_id, comment_url)
-
+    log_entry = '{},{}\n'.format(listing_id, post_url)
     with open('listings.txt', 'a') as f:
         f.write(log_entry)
 
     print('ADDED LOG ENTRY and POSTED TO REDDIT:\n  {}\n'.format(log_entry))
+    return post_url
 
-    return out, log_entry
 
+def run_jolene(input_url):
+    # Check whether input url is valid.
+    listing_id = get_id_from_url(input_url)
+    if listing_id is None:
+        return None
 
-def main():
+    # Establish reddit connection.
     reddit = praw.Reddit(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
@@ -151,15 +151,18 @@ def main():
         username=USERNAME,
         password=PASSWORD)
 
-    exists, content = listing_exists(args['url'])
+    # Check whether listing id associated with url is in database.
+    exists, content = listing_exists(listing_id)
 
+    # Return either existing post, or create new.
     if exists:
-        print('Open {}'.format(content.split(',')[1]))
+        post_url = content.split(',')[1].rstrip('/\n')
+        print('Open {}'.format(post_url))
     if not exists:
-        post(reddit, args['url'])
+        post_url = post(reddit, input_url)
 
-    # pdb.set_trace()
+    return post_url
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
